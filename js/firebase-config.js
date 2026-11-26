@@ -7,7 +7,13 @@
 // qualquer site que usa Firebase. Quem protege os dados de cada pessoa são as regras do
 // Firestore (arquivo firestore.rules), que só deixam cada usuário ler e gravar o que é dele.
 
-export const firebaseConfig = null;
+export const firebaseConfig = {apiKey: "AIzaSyDlrtEPSLS4QxKGF-4ADkbEa1VbtKSNOcw",
+  authDomain: "excellentreading-5faea.firebaseapp.com",
+  projectId: "excellentreading-5faea",
+  storageBucket: "excellentreading-5faea.firebasestorage.app",
+  messagingSenderId: "478178477502",
+  appId: "1:478178477502:web:9e9b8affc3a50e307065ef",
+  measurementId: "G-4NJPQ9H37D"};
 
 /* Exemplo do formato (troque `null` acima por algo assim):
 export const firebaseConfig = {
