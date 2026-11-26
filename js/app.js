@@ -524,7 +524,9 @@ async function refreshLists() {
     docs = await store.listDocs();
   } catch (err) {
     console.error(err);
-    toast('Não consegui carregar a biblioteca. Verifique a internet.');
+    toast(err && err.code === 'permission-denied'
+      ? 'A nuvem recusou o acesso à biblioteca. Confira se as regras do Firestore (firestore.rules) foram publicadas.'
+      : 'Não consegui carregar a biblioteca. Verifique a internet.', 8000);
     return;
   }
   renderDocList(els.libraryList, docs);
