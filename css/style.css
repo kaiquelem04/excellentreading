@@ -799,6 +799,9 @@ body:not(.reading) .notes, body:not(.reading) .notes-tab, body:not(.reading) .no
 .auth-social { display: grid; gap: 8px; }
 .btn.social { justify-content: center; height: 46px; border-radius: 11px; font-size: 15px; }
 .btn.social svg { width: 19px; height: 19px; }
+.gis-box { display: flex; justify-content: center; min-height: 44px; }
+.gis-box iframe { margin: 0 auto !important; }
+.auth.busy .gis-box { opacity: 0.6; pointer-events: none; }
 .auth-divider { display: flex; align-items: center; gap: 12px; margin: 18px 0 14px; color: var(--muted); font-size: 12.5px; }
 .auth-divider::before, .auth-divider::after { content: ''; flex: 1; height: 1px; background: var(--line); }
 .auth-form { display: grid; gap: 12px; }

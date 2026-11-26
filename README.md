@@ -39,6 +39,20 @@ O site é estático (GitHub Pages), então as contas e o banco de dados ficam no
 
 Pronto: o login funciona no site publicado. Para testar no seu computador, use `http://localhost` (já autorizado por padrão).
 
+### Botão oficial do Google (recomendado)
+
+Por padrão, o login com Google abre uma janela do Firebase: o Google mostra "Prosseguir para excellentreading-5faea.firebaseapp.com" e alguns navegadores bloqueiam a janela. O botão oficial do Google resolve os dois (mostra o endereço do site e não é bloqueado). Para ligar:
+
+1. Abra <https://console.cloud.google.com/apis/credentials?project=excellentreading-5faea>.
+2. Em **IDs do cliente OAuth 2.0**, clique em **Web client (auto created by Google Service)**.
+3. Em **Origens JavaScript autorizadas**, adicione `https://kaiquelem04.github.io` (e, se quiser testar no computador, `http://localhost` e `http://localhost:8000`). Salve. O Google avisa que pode levar de 5 minutos a algumas horas para valer.
+4. Em [`js/firebase-config.js`](js/firebase-config.js), troque `googleSignInMode = 'popup'` por `googleSignInMode = 'google-button'`.
+
+### Mostrar "excellentreading" nas telas do Google e nos e-mails
+
+- **E-mails** (redefinição de senha): no Firebase, ⚙ **Configurações do projeto** → **Geral** → **Nome voltado ao público** → `excellentreading`.
+- **Tela de login do Google**: o nome do app só aparece no lugar do endereço depois que a marca é verificada pelo Google. Em <https://console.cloud.google.com/auth/branding?project=excellentreading-5faea>, preencha o nome `excellentreading`, e-mail de suporte, página inicial e política de privacidade, e envie para verificação. O Google pode pedir para provar que o domínio é seu.
+
 ### Ativar "Entrar com Apple" (depois)
 
 Exige uma conta no [Apple Developer Program](https://developer.apple.com/programs/) (US$ 99/ano). Com ela:

@@ -2,11 +2,11 @@
 import {
   onAuthStateChanged, setPersistence, browserLocalPersistence, browserSessionPersistence,
   GoogleAuthProvider, OAuthProvider, signInWithPopup, createUserWithEmailAndPassword,
-  signInWithEmailAndPassword, sendPasswordResetEmail, updateProfile, signOut,
+  signInWithEmailAndPassword, sendPasswordResetEmail, updateProfile, signOut, signInWithCredential,
   terminate, clearIndexedDbPersistence, waitForPendingWrites,
 } from '../vendor/firebase/firebase.js';
 import { auth, configured, setSessionOnly, dbStarted } from './firebase.js';
-import { enableApple } from './firebase-config.js';
+import { enableApple, googleSignInMode, googleClientId } from './firebase-config.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -32,7 +32,7 @@ function errorMessage(err) {
     'auth/password-does-not-meet-requirements': 'A senha não atende às regras do site. Tente uma mais longa, com letras e números.',
     'auth/too-many-requests': 'Muitas tentativas seguidas. Espere alguns minutos e tente de novo.',
     'auth/network-request-failed': 'Sem conexão com a internet. Verifique e tente de novo.',
-    'auth/popup-blocked': 'O navegador bloqueou a janela de login. Permita pop-ups para este site e tente de novo.',
+    'auth/popup-blocked': 'O navegador bloqueou a janela do Google. Clique de novo no botão; se continuar, permita pop-ups para este site.',
     'auth/account-exists-with-different-credential': 'Esse e-mail já tem conta com outro jeito de entrar. Tente e-mail e senha.',
     'auth/unauthorized-domain': 'Este endereço não está autorizado no Firebase (Authentication → Settings → Authorized domains).',
     'auth/operation-not-allowed': 'Esse jeito de entrar não está ativado no Firebase (Authentication → Sign-in method).',
@@ -56,6 +56,7 @@ function setMsg(text, kind = 'error') {
 
 function setBusy(on, btn, label) {
   busy = on;
+  $('auth').classList.toggle('busy', on);
   for (const b of document.querySelectorAll('#auth button')) b.disabled = on;
   if (btn) {
     const lab = btn.querySelector('.btn-label') || btn; // preserva o ícone do botão
@@ -218,8 +219,87 @@ export function initAuthUI() {
   });
 }
 
+// ---------- Google ----------
+
+// A janela do Firebase só abre depois de carregar um iframe de apoio. Se isso acontecer no
+// clique, a demora faz o navegador achar que a janela não veio do usuário e bloquear.
+// Carregar antes, quando a tela de login aparece, deixa o clique abrir a janela na hora.
+// (_initialize é interno do SDK; a versão está fixada em vendor/, então é estável aqui.)
+function preloadPopup() {
+  try {
+    const r = auth && auth._popupRedirectResolver;
+    if (r && typeof r._initialize === 'function') Promise.resolve(r._initialize(auth)).catch(() => {});
+  } catch { /* opcional */ }
+}
+
+let gisScript = null;
+function loadGis() {
+  if (!gisScript) {
+    gisScript = new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = 'https://accounts.google.com/gsi/client';
+      s.async = true;
+      s.onload = () => (window.google && google.accounts && google.accounts.id ? resolve(google) : reject(new Error('GIS sem API')));
+      s.onerror = () => { gisScript = null; reject(new Error('Não carregou o script do Google')); };
+      document.head.appendChild(s);
+    });
+  }
+  return gisScript;
+}
+
+// Recebe o "crachá" (ID token) que o botão oficial do Google entrega e entra no Firebase com ele.
+export async function signInWithGoogleCredential(idToken) {
+  if (busy) return;
+  setMsg('');
+  setBusy(true);
+  try {
+    await persistenceReady;
+    await signInWithCredential(auth, GoogleAuthProvider.credential(idToken));
+  } catch (err) {
+    console.error(err);
+    setMsg(errorMessage(err));
+  } finally {
+    setBusy(false);
+  }
+}
+
+// Botão oficial do Google (Google Identity Services). Se não carregar, fica o botão do Firebase.
+let googleSetup = false;
+async function setupGoogleButton() {
+  if (googleSetup) return;
+  googleSetup = true;
+  if (googleSignInMode !== 'google-button' || !googleClientId) { preloadPopup(); return; }
+  try {
+    const g = await loadGis();
+    g.accounts.id.initialize({
+      client_id: googleClientId,
+      callback: (resp) => signInWithGoogleCredential(resp.credential),
+      ux_mode: 'popup',
+      auto_select: false,
+      context: 'signin',
+      itp_support: true,
+    });
+    const box = $('googleBtnBox');
+    box.hidden = false;
+    $('btnGoogle').hidden = true;
+    const dark = document.documentElement.dataset.theme === 'dark'
+      || (!document.documentElement.dataset.theme && matchMedia('(prefers-color-scheme: dark)').matches);
+    const width = Math.max(220, Math.min(400, Math.floor(box.getBoundingClientRect().width || 352)));
+    g.accounts.id.renderButton(box, {
+      type: 'standard', theme: dark ? 'filled_black' : 'outline', size: 'large', text: 'continue_with',
+      shape: 'rectangular', logo_alignment: 'center', width, locale: 'pt-BR',
+    });
+  } catch (err) {
+    console.warn('Botão oficial do Google indisponível; usando a janela do Firebase.', err);
+    $('googleBtnBox').hidden = true;
+    $('btnGoogle').hidden = false;
+    preloadPopup();
+  }
+}
+
 export function showAuth() {
   setTab('signin');
+  if (configured) setupGoogleButton();
   applyRemember();
   clearLocalCache();
   $('auth').hidden = false;
@@ -261,6 +341,7 @@ export async function logout() {
       return false;
     }
   }
+  try { if (window.google && google.accounts) google.accounts.id.disableAutoSelect(); } catch { /* opcional */ }
   await signOut(auth);
   if (db) {
     try { await terminate(db); await clearIndexedDbPersistence(db); } catch (e) { console.warn('Cache local será limpo na próxima abertura', e); }
