@@ -32,7 +32,7 @@ export const firebaseConfig = {
 //  - 'google-button': botão oficial do Google. Mostra o endereço do site e não é bloqueado.
 //    ANTES de ligar, autorize o endereço do site no Google Cloud (veja o README, seção
 //    "Botão oficial do Google"), senão o Google responde "origin_mismatch".
-export const googleSignInMode = 'popup';
+export const googleSignInMode = 'google-button';
 
 // ID do cliente OAuth "Web client (auto created by Google Service)" do projeto (não é segredo).
 export const googleClientId = '478178477502-v9sffg17tu25r4g1mgcnq69h19e5rcm0.apps.googleusercontent.com';
