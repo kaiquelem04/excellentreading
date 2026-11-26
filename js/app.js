@@ -790,19 +790,62 @@ function bind() {
   window.addEventListener('pagehide', () => { savePosition(); });
 }
 
+// ---------- Tela de abertura ----------
+// A animação (CSS) começa assim que a página aparece. Ela só sai quando a animação
+// terminou E o app terminou de carregar. Clique ou qualquer tecla pula.
+
+const SPLASH_MS = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 700 : 2500;
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Espera a bolinha chegar ao fim do nome (a animação começa na primeira pintura da
+// página, que pode demorar numa conexão lenta), com um limite para nunca travar.
+function splashAnimationDone() {
+  const ink = document.querySelector('.splash-ink');
+  const anims = ink && ink.getAnimations ? ink.getAnimations() : [];
+  if (!anims.length) return wait(Math.max(0, SPLASH_MS - performance.now()));
+  const done = Promise.all(anims.map((a) => a.finished)).then(() => wait(250), () => {});
+  return Promise.race([done, wait(4500)]);
+}
+
+function onSplashKey(e) {
+  e.preventDefault();
+  e.stopPropagation(); // não deixa o espaço que pulou a abertura dar play no texto
+  hideSplash();
+}
+
+function setupSplash() {
+  const splash = $('splash');
+  if (!splash) return;
+  splash.addEventListener('pointerdown', hideSplash);
+  window.addEventListener('keydown', onSplashKey, true);
+}
+
+function hideSplash() {
+  const splash = $('splash');
+  window.removeEventListener('keydown', onSplashKey, true);
+  if (!splash || splash.classList.contains('out')) return;
+  splash.classList.add('out');
+  setTimeout(() => splash.remove(), 700);
+}
+
 // ---------- Início ----------
 
 async function init() {
-  applySettings();
-  bind();
-  const last = lsGet('er.last');
-  if (last && (await openDoc(last))) {
+  setupSplash();
+  try {
+    applySettings();
+    bind();
+    const last = lsGet('er.last');
+    if (last && (await openDoc(last))) {
+      refreshLists();
+      return;
+    }
+    els.welcome.hidden = false;
     refreshLists();
-    return;
+    startDemo();
+  } finally {
+    splashAnimationDone().then(hideSplash);
   }
-  els.welcome.hidden = false;
-  refreshLists();
-  startDemo();
 }
 
 init();
