@@ -38,13 +38,22 @@ const els = {
   pasteText: $('pasteText'),
   dropOverlay: $('dropOverlay'),
   toast: $('toast'),
+  notes: $('notes'),
+  notesTab: $('notesTab'),
+  notesTabCount: $('notesTabCount'),
+  btnNotes: $('btnNotes'),
+  notesBtnCount: $('notesBtnCount'),
+  notesList: $('notesList'),
+  notesCount: $('notesCount'),
+  hlbar: $('hlbar'),
+  hlAction: $('hlAction'),
 };
 
 // ---------- Ajustes ----------
 
 const WPM_MIN = 50;
 const WPM_MAX = 1000;
-const DEFAULTS = { wpm: 250, fontSize: 20, font: 'serif', natural: true, highlight: false, theme: 'auto' };
+const DEFAULTS = { wpm: 250, fontSize: 20, font: 'serif', natural: true, highlight: false, theme: 'auto', notesOpen: false };
 
 function lsGet(k) { try { return localStorage.getItem(k); } catch { return null; } }
 function lsSet(k, v) {
@@ -82,6 +91,7 @@ let lastSaveAt = 0;
 let dotY = null;
 let curEl = null;
 let wakeLock = null;
+let highlights = [];     // sublinhados do texto aberto, em ordem de posição
 
 const baseMs = () => 60000 / settings.wpm;
 const delay = (i) => baseMs() * (weights[i] || 1);
@@ -363,11 +373,22 @@ function showDoc(meta, blocks) {
   dotY = null;
   lsSet('er.last', meta.id);
   updateStats();
+  hideHlBar();
+  highlights = [];
+  renderNotes();
+  if (settings.notesOpen && isWide()) openNotes();
   requestAnimationFrame(() => {
     placeDot(true);
     if (cur === 0) window.scrollTo(0, 0);
     else ensureVisible('instant', true);
   });
+  const id = meta.id;
+  store.listHighlights(id).then((hs) => {
+    if (!doc || doc.id !== id || !hs.length) return;
+    highlights = hs;
+    for (const h of hs) wrapHighlight(h);
+    renderNotes();
+  }).catch((e) => console.warn('Não consegui carregar os sublinhados', e));
 }
 
 async function openDoc(id) {
@@ -395,6 +416,10 @@ function goHome() {
   els.body.classList.remove('reading');
   els.docTitle.textContent = '';
   document.title = 'excellentreading';
+  hideHlBar();
+  highlights = [];
+  renderNotes();
+  if (!isWide()) closeNotes();
   lsSet('er.last', null);
   window.scrollTo(0, 0);
   refreshLists();
@@ -404,14 +429,15 @@ function goHome() {
 async function addParsed({ title, kind, blocks }) {
   const wordCount = countWords(blocks);
   if (!wordCount) throw new Error('Não encontrei nenhuma palavra nesse arquivo.');
-  const existing = (await store.listDocs()).find((d) => d.title === title && d.wordCount === wordCount);
+  // Compara pelo nome original do arquivo, para que renomear não gere duplicata ao reenviar.
+  const existing = (await store.listDocs()).find((d) => (d.sourceName || d.title) === title && d.wordCount === wordCount);
   if (existing) {
     await openDoc(existing.id);
     toast('Esse texto já estava na biblioteca. Continuando de onde você parou.');
     return;
   }
   const now = Date.now();
-  const meta = { id: store.newId(), title, kind, wordCount, position: 0, createdAt: now, updatedAt: now, openedAt: now };
+  const meta = { id: store.newId(), title, sourceName: title, kind, wordCount, position: 0, createdAt: now, updatedAt: now, openedAt: now };
   await store.addDoc(meta, blocks);
   showDoc(meta, blocks);
   hideToast();
@@ -443,27 +469,39 @@ async function importFile(file) {
 
 const TRASH_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
-function renderDocList(ul, docs) {
+const PENCIL_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14.5 5.5 4 4M4 20l1-4.5L15.8 4.7a1.4 1.4 0 0 1 2 0l1.5 1.5a1.4 1.4 0 0 1 0 2L8.5 19 4 20Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>';
+const COPY_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>';
+const MARKER_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14.5 4.5 5 5L10 19H5v-5l9.5-9.5Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M4 22h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+
+const plural = (n, one, many) => `${fmtInt(n)} ${n === 1 ? one : many}`;
+
+function renderDocList(ul, docs, counts) {
   ul.innerHTML = '';
   for (const d of docs) {
     const li = document.createElement('li');
     li.className = 'doc-item' + (doc && d.id === doc.id ? ' current' : '');
     const pct = d.wordCount > 1 ? Math.round(((d.position || 0) / (d.wordCount - 1)) * 100) : 0;
+    const nh = counts.get(d.id) || 0;
     li.innerHTML =
       '<button class="doc-open" type="button"><span class="doc-name"></span>' +
       `<span class="doc-sub"><span class="badge"></span><span class="mini-bar"><i style="width:${pct}%"></i></span>` +
-      `<span>${pct}% · ${fmtInt(d.wordCount)} palavras</span></span></button>` +
+      `<span>${pct}% · ${plural(d.wordCount, 'palavra', 'palavras')}${nh ? ' · ' + plural(nh, 'sublinhado', 'sublinhados') : ''}</span></span></button>` +
+      `<button class="icon-btn doc-ren" type="button" title="Renomear" aria-label="Renomear">${PENCIL_SVG}</button>` +
       `<button class="icon-btn doc-del" type="button" title="Apagar" aria-label="Apagar">${TRASH_SVG}</button>`;
     li.querySelector('.doc-name').textContent = d.title;
     li.querySelector('.badge').textContent = d.kind;
-    li.querySelector('.doc-open').addEventListener('click', async () => {
+    const openBtn = li.querySelector('.doc-open');
+    openBtn.addEventListener('click', async () => {
       closeLibrary();
       if (!doc || doc.id !== d.id) {
         if (!(await openDoc(d.id))) { toast('Não encontrei esse texto.'); refreshLists(); }
       }
     });
+    li.querySelector('.doc-ren').addEventListener('click', () => {
+      startRename(openBtn, d.title, (title) => renameDoc(d.id, title), refreshLists);
+    });
     li.querySelector('.doc-del').addEventListener('click', async () => {
-      if (!confirm(`Apagar "${d.title}" da biblioteca?`)) return;
+      if (!confirm(`Apagar "${d.title}" da biblioteca? Os sublinhados dele também serão apagados.`)) return;
       await store.deleteDoc(d.id);
       if (doc && doc.id === d.id) goHome();
       refreshLists();
@@ -473,10 +511,10 @@ function renderDocList(ul, docs) {
 }
 
 async function refreshLists() {
-  const docs = await store.listDocs();
-  renderDocList(els.libraryList, docs);
+  const [docs, counts] = await Promise.all([store.listDocs(), store.highlightCounts().catch(() => new Map())]);
+  renderDocList(els.libraryList, docs, counts);
   els.libraryEmpty.hidden = docs.length > 0;
-  renderDocList(els.recentList, docs.slice(0, 4));
+  renderDocList(els.recentList, docs.slice(0, 4), counts);
   els.recent.hidden = docs.length === 0;
   els.storageNote.textContent = (await store.isPersistent())
     ? 'Os textos ficam salvos só neste navegador, neste aparelho. Nada é enviado para servidor nenhum.'
@@ -492,7 +530,304 @@ async function openLibrary() {
 }
 function closeLibrary() {
   els.library.hidden = true;
-  els.scrim.hidden = true;
+  els.scrim.hidden = !(els.body.classList.contains('notes-open') && !isWide());
+}
+
+// ---------- Renomear ----------
+
+// Troca o elemento `el` por um campo de texto. Enter ou clicar fora salva; Esc cancela.
+function startRename(el, current, onSave, onEnd) {
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'rename-input';
+  input.value = current;
+  input.maxLength = 120;
+  input.setAttribute('aria-label', 'Novo nome');
+  el.replaceWith(input);
+  input.focus();
+  input.select();
+  let done = false;
+  const finish = async (save) => {
+    if (done) return;
+    done = true;
+    const value = input.value.replace(/\s+/g, ' ').trim();
+    if (input.isConnected) input.replaceWith(el);
+    if (save && value && value !== current) {
+      try { await onSave(value); } catch (e) { toast('Não consegui renomear.'); console.error(e); }
+    }
+    if (onEnd) onEnd();
+  };
+  input.addEventListener('keydown', (e) => {
+    e.stopPropagation(); // não deixa os atalhos de leitura reagirem enquanto digita
+    if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+    else if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+  });
+  input.addEventListener('blur', () => finish(true));
+  input.addEventListener('click', (e) => e.stopPropagation());
+}
+
+async function renameDoc(id, title) {
+  await store.updateMeta(id, { title });
+  if (doc && doc.id === id) {
+    doc.title = title;
+    els.docTitle.textContent = title;
+    document.title = title + ' · excellentreading';
+  }
+}
+
+// ---------- Sublinhados ----------
+
+const isWide = () => window.matchMedia('(min-width: 1024px)').matches;
+
+function blockOf(el) {
+  let n = el;
+  while (n && n.parentElement !== els.text) n = n.parentElement;
+  return n;
+}
+
+// Envolve as palavras start..end num <mark> (um por parágrafo, para não quebrar o HTML).
+function wrapHighlight(h) {
+  const last = Math.min(h.end, words.length - 1);
+  let i = h.start;
+  while (i <= last) {
+    const block = blockOf(words[i]);
+    let j = i;
+    while (j + 1 <= last && blockOf(words[j + 1]) === block) j++;
+    const r = document.createRange();
+    r.setStartBefore(words[i]);
+    r.setEndAfter(words[j]);
+    const mark = document.createElement('mark');
+    mark.className = 'hl';
+    mark.dataset.h = h.id;
+    try {
+      r.surroundContents(mark);
+    } catch {
+      mark.appendChild(r.extractContents());
+      r.insertNode(mark);
+    }
+    i = j + 1;
+  }
+}
+
+function marksOf(id) {
+  return [...els.text.querySelectorAll('mark.hl')].filter((m) => m.dataset.h === id);
+}
+
+function unwrapHighlight(id) {
+  for (const m of marksOf(id)) m.replaceWith(...m.childNodes);
+}
+
+async function addHighlight(s, e) {
+  if (!doc || !words.length) return;
+  s = clamp(s, 0, words.length - 1);
+  e = clamp(e, s, words.length - 1);
+  // Junta com os sublinhados que se sobrepõem, para não ter trechos repetidos.
+  const merged = highlights.filter((h) => h.start <= e && h.end >= s);
+  for (const h of merged) {
+    s = Math.min(s, h.start);
+    e = Math.max(e, h.end);
+    unwrapHighlight(h.id);
+  }
+  const h = { id: store.newId(), docId: doc.id, start: s, end: e, text: '', createdAt: Date.now() };
+  wrapHighlight(h);
+  h.text = marksOf(h.id).map((m) => m.textContent.replace(/\s+/g, ' ').trim()).join('\n\n');
+  highlights = highlights.filter((x) => !merged.includes(x)).concat(h).sort((a, b) => a.start - b.start);
+  renderNotes(true);
+  try {
+    await store.saveHighlight(h, merged.map((x) => x.id));
+  } catch (err) {
+    console.error(err);
+    toast('Não consegui salvar o sublinhado.');
+  }
+}
+
+async function removeHighlight(id) {
+  unwrapHighlight(id);
+  highlights = highlights.filter((h) => h.id !== id);
+  renderNotes();
+  try { await store.deleteHighlight(id); } catch (err) { console.error(err); }
+}
+
+// Converte a seleção do usuário em índices de palavras inteiras (ou null).
+function selectionWords() {
+  const sel = window.getSelection();
+  if (!sel || sel.isCollapsed || !sel.rangeCount || !words.length) return null;
+  const r = sel.getRangeAt(0);
+  if (!r.intersectsNode(els.text)) return null;
+  const n = words.length;
+  // primeira palavra que termina depois do início da seleção
+  let lo = 0, hi = n;
+  while (lo < hi) {
+    const m = (lo + hi) >> 1;
+    if (r.comparePoint(words[m], words[m].childNodes.length) === -1) lo = m + 1; else hi = m;
+  }
+  let s = lo;
+  // última palavra que começa antes do fim da seleção
+  lo = -1; hi = n - 1;
+  while (lo < hi) {
+    const m = (lo + hi + 1) >> 1;
+    if (r.comparePoint(words[m], 0) === 1) hi = m - 1; else lo = m;
+  }
+  let e = lo;
+  if (s < n && r.startContainer === words[s].firstChild && r.startOffset >= words[s].firstChild.length) s++;
+  if (e >= 0 && r.endContainer === words[e].firstChild && r.endOffset === 0) e--;
+  if (s >= n || e < 0 || s > e) return null;
+  return { s, e, rect: r.getBoundingClientRect() };
+}
+
+function currentSentence() {
+  const k = sentenceIndex(cur);
+  const s = sentenceStarts[k] || 0;
+  const e = k + 1 < sentenceStarts.length ? sentenceStarts[k + 1] - 1 : words.length - 1;
+  return { s, e };
+}
+
+// Barrinha flutuante: "Sublinhar" sobre uma seleção ou "Remover" sobre um sublinhado.
+let hlPending = null;
+
+function showHlBar(rect, action) {
+  hlPending = action;
+  els.hlAction.innerHTML = action.type === 'add'
+    ? `${MARKER_SVG}<span>Sublinhar</span>`
+    : `${TRASH_SVG}<span>Remover sublinhado</span>`;
+  els.hlbar.hidden = false;
+  positionHlBar(rect);
+}
+
+function positionHlBar(rect) {
+  const v = viewBounds();
+  const bw = els.hlbar.offsetWidth || 160;
+  const x = clamp(rect.left + rect.width / 2, bw / 2 + 8, window.innerWidth - bw / 2 - 8);
+  const coarse = window.matchMedia('(pointer: coarse)').matches;
+  // No celular fica embaixo, para não brigar com o menu nativo de copiar/colar.
+  let y = coarse ? rect.bottom + 14 : rect.top - 48;
+  if (!coarse && y < v.top + 6) y = rect.bottom + 10;
+  if (coarse && y > v.bottom - 50) y = rect.top - 52;
+  els.hlbar.style.left = x + 'px';
+  els.hlbar.style.top = clamp(y, v.top + 6, v.bottom - 46) + 'px';
+}
+
+function hideHlBar() {
+  hlPending = null;
+  els.hlbar.hidden = true;
+}
+
+function updateHlBarFromSelection() {
+  if (els.reader.hidden) return;
+  const r = selectionWords();
+  if (r) showHlBar(r.rect, { type: 'add', s: r.s, e: r.e });
+  else if (hlPending && hlPending.type === 'add') hideHlBar();
+}
+
+function highlightNow() {
+  if (!words.length) return;
+  const r = selectionWords();
+  const range = r || currentSentence();
+  addHighlight(range.s, range.e);
+  window.getSelection()?.removeAllRanges();
+  hideHlBar();
+  if (!r) toast('Frase sublinhada.', 1500);
+}
+
+// ---------- Painel de sublinhados ----------
+
+function renderNotes(bump = false) {
+  const n = highlights.length;
+  els.notesCount.textContent = n ? `(${n})` : '';
+  els.notesTabCount.textContent = n;
+  els.notesTab.classList.toggle('has', n > 0);
+  els.notesBtnCount.textContent = n;
+  els.notesBtnCount.hidden = n === 0;
+  if (bump) {
+    els.notesTab.classList.remove('bump');
+    void els.notesTab.offsetWidth;
+    els.notesTab.classList.add('bump');
+  }
+  els.notesList.innerHTML = '';
+  const total = Math.max(1, words.length - 1);
+  for (const h of highlights) {
+    const li = document.createElement('li');
+    li.className = 'note';
+    li.innerHTML =
+      '<button class="note-quote" type="button" title="Ir para este trecho"></button>' +
+      `<div class="note-meta"><span>${Math.round((h.start / total) * 100)}% do texto</span>` +
+      `<button class="icon-btn" type="button" data-act="copy" title="Copiar" aria-label="Copiar">${COPY_SVG}</button>` +
+      `<button class="icon-btn" type="button" data-act="del" title="Apagar" aria-label="Apagar">${TRASH_SVG}</button></div>`;
+    li.querySelector('.note-quote').textContent = h.text;
+    li.querySelector('.note-quote').addEventListener('click', () => jumpToHighlight(h));
+    li.querySelector('[data-act="copy"]').addEventListener('click', () => copyText(h.text));
+    li.querySelector('[data-act="del"]').addEventListener('click', () => removeHighlight(h.id));
+    els.notesList.appendChild(li);
+  }
+}
+
+function jumpToHighlight(h) {
+  if (!isWide()) closeNotes();
+  seek(h.start, { scroll: false });
+  const first = words[h.start];
+  if (first) {
+    const r = first.getBoundingClientRect();
+    const v = viewBounds();
+    window.scrollBy({ top: r.top - (v.top + v.height * 0.28), behavior: 'smooth' });
+  }
+  for (const m of marksOf(h.id)) {
+    m.classList.remove('flash');
+    void m.offsetWidth;
+    m.classList.add('flash');
+  }
+}
+
+function openNotes() {
+  closeSettings();
+  els.body.classList.add('notes-open');
+  els.notesTab.setAttribute('aria-expanded', 'true');
+  els.btnNotes.setAttribute('aria-expanded', 'true');
+  if (!isWide()) els.scrim.hidden = false;
+  if (isWide()) { settings.notesOpen = true; saveSettings(); }
+}
+
+function closeNotes() {
+  if (!els.body.classList.contains('notes-open')) return;
+  els.body.classList.remove('notes-open');
+  els.notesTab.setAttribute('aria-expanded', 'false');
+  els.btnNotes.setAttribute('aria-expanded', 'false');
+  if (els.library.hidden) els.scrim.hidden = true;
+  if (isWide()) { settings.notesOpen = false; saveSettings(); }
+}
+
+const toggleNotes = () => (els.body.classList.contains('notes-open') ? closeNotes() : openNotes());
+
+function notesAsMarkdown(withTitle) {
+  const body = highlights.map((h) => '> ' + h.text.replace(/\n\n/g, '\n>\n> ')).join('\n\n');
+  return withTitle && doc ? `# Sublinhados: ${doc.title}\n\n${body}\n` : body;
+}
+
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); } catch { /* sem jeito */ }
+    ta.remove();
+  }
+  toast('Copiado.', 1500);
+}
+
+function exportNotes() {
+  if (!highlights.length) { toast('Nenhum sublinhado para baixar.'); return; }
+  const blob = new Blob([notesAsMarkdown(true)], { type: 'text/markdown;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = (doc.title.replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'texto') + ' - sublinhados.md';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 
 // ---------- Ajustes (painel) ----------
@@ -505,6 +840,7 @@ function applySettings() {
   setRangeFill(els.fontSize);
   document.documentElement.style.setProperty('--font-read', settings.font === 'sans' ? 'var(--font-ui)' : 'var(--font-serif)');
   for (const b of document.querySelectorAll('[data-font]')) b.setAttribute('aria-checked', String(b.dataset.font === settings.font));
+  applyTheme();
   els.optNatural.checked = settings.natural;
   els.optHighlight.checked = settings.highlight;
   els.text.classList.toggle('highlight', settings.highlight);
@@ -524,6 +860,13 @@ function openSettings() {
 function closeSettings() {
   els.settings.hidden = true;
   els.btnSettings.setAttribute('aria-expanded', 'false');
+}
+
+function applyTheme() {
+  const t = settings.theme === 'light' || settings.theme === 'dark' ? settings.theme : 'auto';
+  if (t === 'auto') delete document.documentElement.dataset.theme;
+  else document.documentElement.dataset.theme = t;
+  for (const b of document.querySelectorAll('[data-theme-opt]')) b.setAttribute('aria-checked', String(b.dataset.themeOpt === t));
 }
 
 function isDark() {
@@ -621,7 +964,7 @@ function bind() {
   $('btnFaster').addEventListener('click', () => setWpm(settings.wpm + 10));
   els.speed.addEventListener('input', () => setWpm(+els.speed.value));
 
-  // Clicar numa palavra pula até ela
+  // Clicar numa palavra pula até ela; num trecho sublinhado, oferece remover
   els.text.addEventListener('click', (e) => {
     const w = e.target.closest('.w');
     if (!w) return;
@@ -629,6 +972,72 @@ function bind() {
     if (sel && !sel.isCollapsed) return;
     const i = words.indexOf(w);
     if (i >= 0) seek(i, { scroll: false });
+    const mark = e.target.closest('mark.hl');
+    if (mark) showHlBar(mark.getBoundingClientRect(), { type: 'remove', id: mark.dataset.h });
+  });
+
+  // Sublinhar: barrinha que aparece quando há texto selecionado
+  let pointerIsDown = false;
+  let selTimer = 0;
+  const scheduleSelCheck = () => {
+    clearTimeout(selTimer);
+    selTimer = setTimeout(updateHlBarFromSelection, 220);
+  };
+  document.addEventListener('pointerdown', (e) => {
+    pointerIsDown = true;
+    if (!els.hlbar.contains(e.target)) hideHlBar();
+  }, true);
+  document.addEventListener('pointerup', () => { pointerIsDown = false; scheduleSelCheck(); }, true);
+  document.addEventListener('selectionchange', () => {
+    // Com mouse, espera soltar o botão; no toque, as alças de seleção não disparam pointerup.
+    if (!pointerIsDown || window.matchMedia('(pointer: coarse)').matches) scheduleSelCheck();
+  });
+  els.hlbar.addEventListener('mousedown', (e) => e.preventDefault()); // não perde a seleção ao clicar
+  els.hlAction.addEventListener('click', () => {
+    const a = hlPending;
+    if (!a) return;
+    if (a.type === 'add') {
+      addHighlight(a.s, a.e);
+      window.getSelection()?.removeAllRanges();
+    } else {
+      removeHighlight(a.id);
+    }
+    hideHlBar();
+  });
+  let scrollRaf = 0;
+  window.addEventListener('scroll', () => {
+    if (els.hlbar.hidden || scrollRaf) return;
+    scrollRaf = requestAnimationFrame(() => {
+      scrollRaf = 0;
+      if (!hlPending) return;
+      if (hlPending.type === 'remove') { hideHlBar(); return; }
+      const r = selectionWords();
+      if (r) positionHlBar(r.rect); else hideHlBar();
+    });
+  }, { passive: true });
+
+  // Painel de sublinhados
+  els.notesTab.addEventListener('click', toggleNotes);
+  els.btnNotes.addEventListener('click', toggleNotes);
+  $('btnCloseNotes').addEventListener('click', closeNotes);
+  $('btnCopyAll').addEventListener('click', () => {
+    if (!highlights.length) { toast('Nenhum sublinhado para copiar.'); return; }
+    copyText(notesAsMarkdown(false));
+  });
+  $('btnExport').addEventListener('click', exportNotes);
+  window.addEventListener('resize', () => {
+    if (els.body.classList.contains('notes-open') && els.library.hidden) els.scrim.hidden = isWide();
+  });
+
+  // Renomear clicando no título do topo
+  els.docTitle.addEventListener('click', () => {
+    if (!doc) return;
+    const id = doc.id;
+    startRename(els.docTitle, doc.title, (title) => renameDoc(id, title), null);
+  });
+
+  window.addEventListener('er-db-blocked', () => {
+    toast('Feche as outras abas do excellentreading para terminar de atualizar o site.', 0);
   });
 
   // Barra de progresso (clicar/arrastar)
@@ -696,14 +1105,21 @@ function bind() {
   });
   $('btnTheme').addEventListener('click', () => {
     settings.theme = isDark() ? 'light' : 'dark';
-    document.documentElement.dataset.theme = settings.theme;
+    applyTheme();
     saveSettings();
   });
+  for (const b of document.querySelectorAll('[data-theme-opt]')) {
+    b.addEventListener('click', () => {
+      settings.theme = b.dataset.themeOpt;
+      applyTheme();
+      saveSettings();
+    });
+  }
 
   // Biblioteca
   $('btnLibrary').addEventListener('click', () => (els.library.hidden ? openLibrary() : closeLibrary()));
   $('btnCloseLibrary').addEventListener('click', closeLibrary);
-  els.scrim.addEventListener('click', closeLibrary);
+  els.scrim.addEventListener('click', () => { closeLibrary(); closeNotes(); });
 
   // Teclado
   document.addEventListener('keydown', (e) => {
@@ -714,9 +1130,11 @@ function bind() {
     const onRange = t.type === 'range';
     const reading = !els.reader.hidden;
 
-    if (e.key === 'Escape') { closeSettings(); closeLibrary(); return; }
+    if (e.key === 'Escape') { closeSettings(); hideHlBar(); if (!els.library.hidden) closeLibrary(); else closeNotes(); return; }
     if (e.key === 'b' || e.key === 'B') { if (els.library.hidden) openLibrary(); else closeLibrary(); return; }
     if (!reading) return;
+    if (e.key === 'h' || e.key === 'H') { e.preventDefault(); highlightNow(); return; }
+    if (e.key === 's' || e.key === 'S') { e.preventDefault(); toggleNotes(); return; }
 
     switch (e.key) {
       case ' ':

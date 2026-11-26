@@ -1,11 +1,18 @@
-// Guarda os textos no navegador (IndexedDB). "meta" fica leve para listar a biblioteca;
-// "content" guarda o texto em si.
+// Guarda os textos no navegador (IndexedDB).
+// "meta": dados leves para listar a biblioteca; "content": o texto em si;
+// "highlights": trechos sublinhados (por índice de palavra) de cada texto.
 
 const DB_NAME = 'excellentreading';
-const VERSION = 1;
+const VERSION = 2;
 
 let dbPromise = null;
 let memory = null; // fallback se o IndexedDB não estiver disponível (ex.: aba anônima restrita)
+
+function useMemory(err) {
+  memory = { meta: new Map(), content: new Map(), highlights: new Map() };
+  console.warn('IndexedDB indisponível, usando memória temporária.', err);
+  return null;
+}
 
 function open() {
   if (!dbPromise) {
@@ -21,15 +28,20 @@ function open() {
         const db = req.result;
         if (!db.objectStoreNames.contains('meta')) db.createObjectStore('meta', { keyPath: 'id' });
         if (!db.objectStoreNames.contains('content')) db.createObjectStore('content', { keyPath: 'id' });
+        if (!db.objectStoreNames.contains('highlights')) {
+          db.createObjectStore('highlights', { keyPath: 'id' }).createIndex('docId', 'docId');
+        }
       };
-      req.onsuccess = () => resolve(req.result);
+      req.onsuccess = () => {
+        const db = req.result;
+        // Se uma versão mais nova do site abrir em outra aba, libera o banco para ela atualizar.
+        db.onversionchange = () => db.close();
+        resolve(db);
+      };
       req.onerror = () => reject(req.error);
-      req.onblocked = () => reject(new Error('Banco de dados bloqueado'));
-    }).catch((err) => {
-      memory = { meta: new Map(), content: new Map() };
-      console.warn('IndexedDB indisponível, usando memória temporária.', err);
-      return null;
-    });
+      // Outra aba com a versão antiga do site está segurando o banco: espera ela fechar.
+      req.onblocked = () => window.dispatchEvent(new CustomEvent('er-db-blocked'));
+    }).catch(useMemory);
   }
   return dbPromise;
 }
@@ -56,11 +68,11 @@ function reqValue(req) {
   });
 }
 
+// ---------- Textos ----------
+
 export async function listDocs() {
   const db = await open();
-  let all;
-  if (!db) all = [...memory.meta.values()];
-  else all = await reqValue(db.transaction('meta').objectStore('meta').getAll());
+  const all = db ? await reqValue(db.transaction('meta').objectStore('meta').getAll()) : [...memory.meta.values()];
   return all.sort((a, b) => (b.openedAt || 0) - (a.openedAt || 0));
 }
 
@@ -110,12 +122,77 @@ export async function deleteDoc(id) {
   if (!db) {
     memory.meta.delete(id);
     memory.content.delete(id);
+    for (const [hid, h] of memory.highlights) if (h.docId === id) memory.highlights.delete(hid);
     return;
   }
-  await tx(db, ['meta', 'content'], 'readwrite', (t) => {
+  await tx(db, ['meta', 'content', 'highlights'], 'readwrite', (t) => {
     t.objectStore('meta').delete(id);
     t.objectStore('content').delete(id);
+    const store = t.objectStore('highlights');
+    const cur = store.index('docId').openKeyCursor(IDBKeyRange.only(id));
+    cur.onsuccess = () => {
+      const c = cur.result;
+      if (c) {
+        store.delete(c.primaryKey);
+        c.continue();
+      }
+    };
   });
+}
+
+// ---------- Sublinhados ----------
+
+export async function listHighlights(docId) {
+  const db = await open();
+  const all = db
+    ? await reqValue(db.transaction('highlights').objectStore('highlights').index('docId').getAll(IDBKeyRange.only(docId)))
+    : [...memory.highlights.values()].filter((h) => h.docId === docId);
+  return all.sort((a, b) => a.start - b.start);
+}
+
+// Grava um sublinhado e apaga, na mesma operação, os que foram fundidos nele.
+export async function saveHighlight(h, removeIds = []) {
+  const db = await open();
+  if (!db) {
+    for (const id of removeIds) memory.highlights.delete(id);
+    memory.highlights.set(h.id, h);
+    return;
+  }
+  await tx(db, ['highlights'], 'readwrite', (t) => {
+    const store = t.objectStore('highlights');
+    for (const id of removeIds) store.delete(id);
+    store.put(h);
+  });
+}
+
+export async function deleteHighlight(id) {
+  const db = await open();
+  if (!db) {
+    memory.highlights.delete(id);
+    return;
+  }
+  await tx(db, ['highlights'], 'readwrite', (t) => t.objectStore('highlights').delete(id));
+}
+
+// Quantos sublinhados cada texto tem (sem carregar os textos dos trechos).
+export async function highlightCounts() {
+  const counts = new Map();
+  const db = await open();
+  if (!db) {
+    for (const h of memory.highlights.values()) counts.set(h.docId, (counts.get(h.docId) || 0) + 1);
+    return counts;
+  }
+  await tx(db, ['highlights'], 'readonly', (t) => {
+    const cur = t.objectStore('highlights').index('docId').openKeyCursor();
+    cur.onsuccess = () => {
+      const c = cur.result;
+      if (c) {
+        counts.set(c.key, (counts.get(c.key) || 0) + 1);
+        c.continue();
+      }
+    };
+  });
+  return counts;
 }
 
 export function newId() {

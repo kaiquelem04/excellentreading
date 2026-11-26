@@ -8,6 +8,8 @@ Leitor guiado para acelerar a leitura. Você envia um texto em **.txt**, **.md**
 - **Slider de velocidade** (com botões − / + e setas do teclado).
 - **Ritmo natural** (opcional): pausa um pouco mais em vírgulas, pontos finais e palavras longas, e compensa nas curtas. A média continua sendo a velocidade escolhida.
 - **Biblioteca salva no navegador**: os textos e o ponto onde você parou ficam guardados (IndexedDB). Nada é enviado para servidor nenhum.
+- **Sublinhador**: selecione um trecho e toque em *Sublinhar* (ou aperte `H` para sublinhar a frase em que a bolinha está). Os trechos ficam numa abinha na lateral, em ordem de leitura: clique para voltar ao trecho, copie, apague, ou baixe todos como `.md`.
+- **Renomear** textos pelo lápis na biblioteca ou clicando no título no topo.
 - **Clique em qualquer palavra** para recomeçar dali; arraste a barra de progresso para pular.
 - Tema claro/escuro, tamanho e tipo de letra, funciona no celular, mantém a tela acesa enquanto lê.
 
@@ -18,6 +20,8 @@ Leitor guiado para acelerar a leitura. Você envia um texto em **.txt**, **.md**
 | `Espaço` | play / pausa |
 | `↑` / `↓` | +10 / −10 palavras por minuto (`Shift` = 50) |
 | `←` / `→` | frase anterior / próxima (`Shift` = uma palavra) |
+| `H` | sublinhar a seleção (ou a frase atual) |
+| `S` | abrir / fechar os sublinhados |
 | `B` | abrir a biblioteca |
 
 ## Como rodar
@@ -41,7 +45,7 @@ Depois abra `http://localhost:8000`. (Abrir o `index.html` direto do disco não 
 - **PDF digitalizado** (página escaneada como imagem) não tem texto para extrair; o site avisa quando é o caso.
 - Em PDFs, a separação de parágrafos e a remoção de cabeçalhos/rodapés são feitas por heurística. Funciona bem em livros e artigos comuns; layouts em várias colunas ou com muitas tabelas podem sair embaralhados.
 - Palavras hifenizadas no fim da linha do PDF são juntadas ("exem-plo" → "exemplo"). Isso também junta palavras compostas que caíram exatamente na quebra ("guarda-chuva" → "guardachuva").
-- A biblioteca fica só no navegador e aparelho em que você abriu o texto. Limpar os dados do site apaga a biblioteca.
+- A biblioteca (e os sublinhados) fica só no navegador e aparelho em que você abriu o texto. Limpar os dados do site apaga tudo; use *baixar .md* para guardar os sublinhados fora do navegador.
 
 ## Estrutura
 
