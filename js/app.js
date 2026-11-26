@@ -1,6 +1,7 @@
 import { parseFile, parsePlain } from './parsers.js';
 import * as store from './storage.js';
 import { SAMPLE } from './sample.js';
+import { watchAuth, initAuthUI, showAuth, hideAuth, logout, currentUser } from './auth.js';
 
 const $ = (id) => document.getElementById(id);
 const els = {
@@ -47,6 +48,13 @@ const els = {
   notesCount: $('notesCount'),
   hlbar: $('hlbar'),
   hlAction: $('hlAction'),
+  btnAvatar: $('btnAvatar'),
+  headerAvatar: $('headerAvatar'),
+  accountAvatar: $('accountAvatar'),
+  accountName: $('accountName'),
+  accountEmail: $('accountEmail'),
+  btnLogout: $('btnLogout'),
+  hello: $('hello'),
 };
 
 // ---------- Ajustes ----------
@@ -257,7 +265,7 @@ function tick(now) {
   if (moved) {
     placeDot();
     updateStats();
-    if (now - lastSaveAt > 4000) { lastSaveAt = now; savePosition(); }
+    if (now - lastSaveAt > 10000) { lastSaveAt = now; savePosition(); }
   }
   rafId = requestAnimationFrame(tick);
 }
@@ -371,7 +379,7 @@ function showDoc(meta, blocks) {
   cur = clamp(meta.position || 0, 0, Math.max(0, words.length - 1));
   ended = false;
   dotY = null;
-  lsSet('er.last', meta.id);
+  lsSet(lastKey(), meta.id);
   updateStats();
   hideHlBar();
   highlights = [];
@@ -395,7 +403,7 @@ async function openDoc(id) {
   pause();
   const [meta, content] = await Promise.all([store.getMeta(id), store.getContent(id)]);
   if (!meta || !content) {
-    lsSet('er.last', null);
+    lsSet(lastKey(), null);
     return false;
   }
   meta.openedAt = Date.now();
@@ -420,7 +428,7 @@ function goHome() {
   highlights = [];
   renderNotes();
   if (!isWide()) closeNotes();
-  lsSet('er.last', null);
+  lsSet(lastKey(), null);
   window.scrollTo(0, 0);
   refreshLists();
   startDemo();
@@ -475,13 +483,13 @@ const MARKER_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14.5 4
 
 const plural = (n, one, many) => `${fmtInt(n)} ${n === 1 ? one : many}`;
 
-function renderDocList(ul, docs, counts) {
+function renderDocList(ul, docs) {
   ul.innerHTML = '';
   for (const d of docs) {
     const li = document.createElement('li');
     li.className = 'doc-item' + (doc && d.id === doc.id ? ' current' : '');
     const pct = d.wordCount > 1 ? Math.round(((d.position || 0) / (d.wordCount - 1)) * 100) : 0;
-    const nh = counts.get(d.id) || 0;
+    const nh = Math.max(0, d.highlightCount || 0);
     li.innerHTML =
       '<button class="doc-open" type="button"><span class="doc-name"></span>' +
       `<span class="doc-sub"><span class="badge"></span><span class="mini-bar"><i style="width:${pct}%"></i></span>` +
@@ -511,14 +519,19 @@ function renderDocList(ul, docs, counts) {
 }
 
 async function refreshLists() {
-  const [docs, counts] = await Promise.all([store.listDocs(), store.highlightCounts().catch(() => new Map())]);
-  renderDocList(els.libraryList, docs, counts);
+  let docs;
+  try {
+    docs = await store.listDocs();
+  } catch (err) {
+    console.error(err);
+    toast('Não consegui carregar a biblioteca. Verifique a internet.');
+    return;
+  }
+  renderDocList(els.libraryList, docs);
   els.libraryEmpty.hidden = docs.length > 0;
-  renderDocList(els.recentList, docs.slice(0, 4), counts);
+  renderDocList(els.recentList, docs.slice(0, 4));
   els.recent.hidden = docs.length === 0;
-  els.storageNote.textContent = (await store.isPersistent())
-    ? 'Os textos ficam salvos só neste navegador, neste aparelho. Nada é enviado para servidor nenhum.'
-    : 'Este navegador não está permitindo salvar. Os textos somem quando a aba é fechada.';
+  els.storageNote.textContent = 'Seus textos ficam na sua conta: entre com ela em outro aparelho e a biblioteca estará lá.';
 }
 
 async function openLibrary() {
@@ -645,7 +658,7 @@ async function removeHighlight(id) {
   unwrapHighlight(id);
   highlights = highlights.filter((h) => h.id !== id);
   renderNotes();
-  try { await store.deleteHighlight(id); } catch (err) { console.error(err); }
+  try { if (doc) await store.deleteHighlight(id, doc.id); } catch (err) { console.error(err); }
 }
 
 // Converte a seleção do usuário em índices de palavras inteiras (ou null).
@@ -1036,8 +1049,25 @@ function bind() {
     startRename(els.docTitle, doc.title, (title) => renameDoc(id, title), null);
   });
 
-  window.addEventListener('er-db-blocked', () => {
-    toast('Feche as outras abas do excellentreading para terminar de atualizar o site.', 0);
+  // Conta
+  els.btnAvatar.addEventListener('click', (e) => { e.stopPropagation(); openSettings(); });
+  els.btnLogout.addEventListener('click', async () => {
+    pause();
+    await savePosition();
+    closeSettings();
+    toast('Saindo…', 0);
+    if (!(await logout())) hideToast();
+  });
+  window.addEventListener('er-profile', () => renderAccount(currentUser()));
+  let syncErrorShown = false;
+  window.addEventListener('er-sync-error', (e) => {
+    if (syncErrorShown) return;
+    syncErrorShown = true;
+    const code = e.detail && e.detail.code;
+    toast(code === 'permission-denied'
+      ? 'A nuvem recusou a gravação (permissão negada). Confira as regras do Firestore.'
+      : 'Não consegui salvar uma mudança na nuvem. Ela será tentada de novo.', 7000);
+    setTimeout(() => { syncErrorShown = false; }, 15000);
   });
 
   // Barra de progresso (clicar/arrastar)
@@ -1248,21 +1278,107 @@ function hideSplash() {
 
 // ---------- Início ----------
 
+let sessionUser = null;
+const lastKey = () => 'er.last.' + (sessionUser ? sessionUser.uid : 'anon');
+
+function renderAccount(user) {
+  if (!user) return;
+  const name = user.displayName || (user.email ? user.email.split('@')[0] : 'Leitor');
+  const initial = (name.trim()[0] || '?').toUpperCase();
+  for (const av of [els.accountAvatar, els.headerAvatar]) {
+    if (user.photoURL) {
+      av.textContent = '';
+      av.style.backgroundImage = `url("${user.photoURL.replace(/"/g, '%22')}")`;
+    } else {
+      av.textContent = initial;
+      av.style.backgroundImage = '';
+    }
+  }
+  els.accountName.textContent = name;
+  els.accountEmail.textContent = user.email || '';
+  els.btnAvatar.hidden = false;
+  els.btnAvatar.title = `${name} (${user.email || 'sua conta'})`;
+  els.hello.textContent = `Olá, ${name.split(' ')[0]}!`;
+  els.hello.hidden = false;
+}
+
+// Leva para a conta os textos que estavam salvos só neste navegador (antes de existir login).
+async function importLegacy() {
+  const items = await store.readLegacyLocal();
+  if (!items) return;
+  if (!items.length) { await store.deleteLegacyLocal(); return; }
+  toast(`Levando ${plural(items.length, 'texto', 'textos')} deste navegador para a sua conta…`, 0);
+  try {
+    const existing = await store.listDocs();
+    const key = (m) => (m.sourceName || m.title) + '|' + m.wordCount;
+    const have = new Set(existing.map(key));
+    let moved = 0;
+    for (const it of items) {
+      if (have.has(key(it.meta))) continue;
+      const meta = { ...it.meta, sourceName: it.meta.sourceName || it.meta.title };
+      // Espera a confirmação do servidor antes de apagar a cópia local.
+      await store.addDoc(meta, it.blocks, it.highlights, { strict: true });
+      moved++;
+    }
+    await store.deleteLegacyLocal();
+    try {
+      const oldLast = localStorage.getItem('er.last');
+      if (oldLast && !lsGet(lastKey())) lsSet(lastKey(), oldLast);
+      localStorage.removeItem('er.last');
+    } catch { /* ignora */ }
+    toast(moved ? `Pronto: ${plural(moved, 'texto foi', 'textos foram')} para a sua conta.` : 'Sua biblioteca já estava na conta.', 5000);
+  } catch (err) {
+    console.error(err);
+    toast('Não consegui levar seus textos antigos para a conta agora. Vou tentar de novo na próxima vez.', 7000);
+  }
+}
+
+async function enterApp(user) {
+  if (sessionUser && sessionUser.uid === user.uid) return;
+  sessionUser = user;
+  store.setUser(user.uid);
+  hideAuth();
+  renderAccount(user);
+  // Se a migração demorar (internet lenta), não segura a tela além de 20 s.
+  await Promise.race([importLegacy(), new Promise((r) => setTimeout(r, 20000))]);
+  const last = lsGet(lastKey());
+  if (last && (await openDoc(last).catch(() => false))) {
+    refreshLists();
+    return;
+  }
+  els.welcome.hidden = false;
+  refreshLists();
+  startDemo();
+}
+
 async function init() {
   setupSplash();
-  try {
-    applySettings();
-    bind();
-    const last = lsGet('er.last');
-    if (last && (await openDoc(last))) {
-      refreshLists();
-      return;
-    }
-    els.welcome.hidden = false;
-    refreshLists();
-    startDemo();
-  } finally {
+  applySettings();
+  bind();
+  initAuthUI();
+  let first = true;
+  const ready = () => {
+    if (!first) return;
+    first = false;
     splashAnimationDone().then(hideSplash);
+  };
+  try {
+    watchAuth(async (user) => {
+      try {
+        if (user) await enterApp(user);
+        else if (!sessionUser) showAuth();
+        else location.reload(); // saiu em outra aba
+      } catch (err) {
+        console.error(err);
+        toast('Algo deu errado ao abrir sua conta. Recarregue a página.', 0);
+      } finally {
+        ready();
+      }
+    });
+  } catch (err) {
+    console.error(err);
+    showAuth();
+    ready();
   }
 }
 

@@ -11,7 +11,7 @@ export const SAMPLE = {
     { t: 'h', l: 2, x: 'Ritmo natural' },
     { t: 'p', x: 'Com o ritmo natural ligado, a bolinha espera um pouco mais em vírgulas, pontos finais e palavras longas, e compensa nas palavras curtas. A média continua sendo a velocidade que você escolheu, então o tempo restante mostrado embaixo continua valendo.' },
     { t: 'h', l: 2, x: 'Seus textos ficam salvos' },
-    { t: 'p', x: 'Os arquivos que você abre ficam guardados neste navegador, junto com o ponto onde você parou. Nada é enviado para nenhum servidor. Abra a biblioteca para trocar de texto ou apagar os que já terminou. Se você limpar os dados do navegador, a biblioteca também é apagada.' },
+    { t: 'p', x: 'Os arquivos que você abre ficam guardados na sua conta, junto com o ponto onde você parou e os trechos sublinhados. Entre com a mesma conta no celular ou em outro computador e a sua biblioteca estará lá. Abra a biblioteca para trocar de texto, renomear ou apagar os que já terminou.' },
     { t: 'p', x: 'Pronto. Agora é só enviar um arquivo em txt, md ou pdf e começar a ler.' },
   ],
 };

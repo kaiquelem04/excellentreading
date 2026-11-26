@@ -28,6 +28,65 @@
     </div>
   </div>
 
+  <section class="auth" id="auth" hidden aria-labelledby="authTitle">
+    <div class="auth-card">
+      <div class="auth-brand"><span class="brand-mark" aria-hidden="true"></span><span>excellent<b>reading</b></span></div>
+      <h1 id="authTitle">Entre para continuar lendo</h1>
+      <p class="auth-sub">Sua biblioteca, a posição de leitura e os sublinhados ficam na sua conta e aparecem em qualquer aparelho.</p>
+
+      <div class="auth-tabs" role="tablist">
+        <button type="button" role="tab" data-auth-tab="signin" aria-selected="true">Entrar</button>
+        <button type="button" role="tab" data-auth-tab="signup" aria-selected="false">Criar conta</button>
+      </div>
+
+      <div class="auth-social">
+        <button type="button" class="btn social" id="btnGoogle">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#4285F4" d="M23.5 12.3c0-.8-.1-1.6-.2-2.3H12v4.5h6.5a5.6 5.6 0 0 1-2.4 3.6v3h3.9c2.2-2.1 3.5-5.1 3.5-8.8Z"/><path fill="#34A853" d="M12 24c3.2 0 6-1.1 7.9-2.9l-3.9-3c-1 .7-2.4 1.2-4 1.2-3.1 0-5.7-2.1-6.7-4.9h-4v3.1A12 12 0 0 0 12 24Z"/><path fill="#FBBC05" d="M5.3 14.4a7.2 7.2 0 0 1 0-4.7V6.6h-4a12 12 0 0 0 0 10.8l4-3Z"/><path fill="#EA4335" d="M12 4.8c1.8 0 3.3.6 4.6 1.8l3.4-3.4A11.5 11.5 0 0 0 12 0 12 12 0 0 0 1.3 6.6l4 3.1C6.3 6.9 8.9 4.8 12 4.8Z"/></svg>
+          <span class="btn-label">Continuar com Google</span>
+        </button>
+        <button type="button" class="btn social" id="btnApple" hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M16.4 12.6c0-2.6 2.1-3.8 2.2-3.9a4.8 4.8 0 0 0-3.8-2c-1.6-.2-3.1.9-3.9.9-.8 0-2-.9-3.4-.9a5 5 0 0 0-4.2 2.6c-1.8 3.1-.5 7.7 1.3 10.2.9 1.2 1.9 2.6 3.2 2.6 1.3-.1 1.8-.8 3.3-.8 1.6 0 2 .8 3.4.8s2.3-1.3 3.1-2.5a11 11 0 0 0 1.4-2.9 4.5 4.5 0 0 1-2.6-4.1ZM13.9 5c.7-.9 1.2-2 1-3.2-1 .1-2.2.7-2.9 1.5-.7.7-1.2 1.9-1.1 3.1 1.1.1 2.3-.6 3-1.4Z"/></svg>
+          <span class="btn-label">Continuar com Apple</span>
+        </button>
+      </div>
+
+      <div class="auth-divider"><span>ou com e-mail</span></div>
+
+      <form class="auth-form" id="signinForm" novalidate>
+        <label class="auth-field"><span>E-mail</span><input type="email" id="siEmail" autocomplete="username" inputmode="email" required></label>
+        <label class="auth-field"><span>Senha</span>
+          <span class="pass-wrap">
+            <input type="password" id="siPass" autocomplete="current-password" required>
+            <button type="button" class="pass-toggle" data-toggle-pass="siPass" aria-pressed="false" title="Mostrar senha" aria-label="Mostrar senha"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.6"/></svg></button>
+          </span>
+        </label>
+        <div class="auth-row">
+          <label class="auth-check"><input type="checkbox" id="siRemember" checked> Manter conectado</label>
+          <button type="button" class="link-btn" id="btnForgot">Esqueci a senha</button>
+        </div>
+        <button type="submit" class="btn primary lg auth-submit" id="btnSignin"><span class="btn-label">Entrar</span></button>
+      </form>
+
+      <form class="auth-form" id="signupForm" novalidate hidden>
+        <label class="auth-field"><span>Nome</span><input type="text" id="suName" autocomplete="name" maxlength="60" required></label>
+        <label class="auth-field"><span>E-mail</span><input type="email" id="suEmail" autocomplete="email" inputmode="email" required></label>
+        <label class="auth-field"><span>Senha <small>mínimo de 8 caracteres</small></span>
+          <span class="pass-wrap">
+            <input type="password" id="suPass" autocomplete="new-password" minlength="8" required>
+            <button type="button" class="pass-toggle" data-toggle-pass="suPass" aria-pressed="false" title="Mostrar senha" aria-label="Mostrar senha"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.6"/></svg></button>
+          </span>
+        </label>
+        <div class="auth-row">
+          <label class="auth-check"><input type="checkbox" id="suRemember" checked> Manter conectado</label>
+        </div>
+        <button type="submit" class="btn primary lg auth-submit" id="btnSignup"><span class="btn-label">Criar conta</span></button>
+      </form>
+
+      <p class="auth-msg" id="authMsg" role="alert" hidden></p>
+      <p class="auth-msg error" id="authConfigWarn" hidden>O login ainda não foi configurado: falta colar a configuração do Firebase em <code>js/firebase-config.js</code>. Veja o README.</p>
+    </div>
+  </section>
+
   <header class="topbar">
     <button class="brand" id="btnHome" type="button" aria-label="Início">
       <span class="brand-mark" aria-hidden="true"></span>
@@ -42,6 +101,7 @@
       <button class="icon-btn" id="btnLibrary" type="button" title="Biblioteca (B)" aria-label="Biblioteca">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V5a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1Zm6 0V5a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-3a1 1 0 0 1-1-1Zm6.3-12.6 2.9-.8a1 1 0 0 1 1.2.7l3.4 12.6a1 1 0 0 1-.7 1.2l-2.9.8a1 1 0 0 1-1.2-.7L15.6 7.6a1 1 0 0 1 .7-1.2Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
       </button>
+      <button class="icon-btn avatar-btn" id="btnAvatar" type="button" title="Sua conta" aria-label="Sua conta" hidden><span class="avatar" id="headerAvatar" aria-hidden="true"></span></button>
       <button class="icon-btn" id="btnSettings" type="button" title="Ajustes" aria-label="Ajustes" aria-expanded="false" aria-controls="settings">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="16" cy="7" r="2" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="10" cy="17" r="2" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
       </button>
@@ -56,6 +116,11 @@
   </header>
 
   <div class="popover" id="settings" hidden>
+    <div class="account" id="account">
+      <span class="avatar" id="accountAvatar" aria-hidden="true"></span>
+      <span class="account-text"><b id="accountName"></b><small id="accountEmail"></small></span>
+      <button type="button" class="btn" id="btnLogout">Sair</button>
+    </div>
     <label class="field">
       <span>Tamanho da letra <output id="fontSizeOut">20</output></span>
       <input type="range" id="fontSize" min="15" max="30" step="1" value="20">
@@ -97,8 +162,9 @@
     <section class="welcome" id="welcome" hidden>
       <div class="hero">
         <p class="demo" id="demo" aria-hidden="true"><span>Siga</span> <span>a</span> <span>bolinha</span> <span>e</span> <span>leia</span> <span>no</span> <span>seu</span> <span>ritmo.</span><i class="demo-dot"></i></p>
+        <p class="hello" id="hello" hidden></p>
         <h1>Leia mais rápido, sem perder o fio.</h1>
-        <p class="lede">Envie um texto em <b>.txt</b>, <b>.md</b> ou <b>.pdf</b>. Uma bolinha passa por baixo de cada palavra na velocidade que você escolher. Tudo fica salvo neste navegador, inclusive onde você parou.</p>
+        <p class="lede">Envie um texto em <b>.txt</b>, <b>.md</b> ou <b>.pdf</b>. Uma bolinha passa por baixo de cada palavra na velocidade que você escolher. Tudo fica salvo na sua conta, inclusive onde você parou, e aparece em qualquer aparelho.</p>
         <div class="cta">
           <button class="btn primary lg" id="btnOpen2" type="button">Escolher arquivo</button>
           <button class="btn lg" id="btnPaste" type="button">Colar texto</button>
